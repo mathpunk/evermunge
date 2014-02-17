@@ -1,61 +1,47 @@
-(ns munger.en
-  (:require [monger.collection :as m] [monger.core :as mc])
-  (:use [monger.operators])
-  (:import [org.bson.types ObjectId] [com.mongodb DB WriteConcern MongoOptions ServerAddress]))
 
-;; Connecting to the machine and database
-(defn connection [host db]
-  (let [^MongoOptions opts (mc/mongo-options :threads-allowed-to-block-for-connection-multiplier 300)
-        port 27017
-        ^ServerAddress sa  (mc/server-address host port)]
-    (do
-      (mc/connect! sa opts)
-      (mc/set-db! (mc/get-db db))
-      )
-    )
-  )
 
-(defn connect [ ]
-  (connection "feuille" "livre"))
 
-;; Presumably this is an arg to a function or whatever?
-(connect)
+
+
+
+
+
+
 
 
 ;;;;;;;;;;;;;;;;;;;;;the basics;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-
-(m/find-one "evernotes" {:tags []})
-
 ;; To get clj data structures, use these, passing in the collection name and a map of the query
-;;   m/find-one-as-map COLL QMAP
-;;   m/find-maps COLL QMAP
+;;   m/find-one-as-map collection query-map
+;;   m/find-maps collection query-map
 
 (def fucked (m/find-one-as-map "evernotes" {:tags "fucked"}))
 
-fucked
-
 (:tags fucked)
 
+;;;;;;;;;;;;;;;;;;;;;;;;Loading a subset of fields;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-
-;;;;;;;;;;;;;;;;;;;;;;;;Loading a subset of fields;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;; Both monger.collection/find and monger.collection/find-maps take 3rd argument that specifies what fields need to be retrieved:
-
-;; (m/find-one-as-map "accounts" {:username "happyjoe"} ["email" "username"])
-
-;; This is useful to excluding very large fields from loading when you won't operate on them.
-
-;; Fields can be specified as a document (just like in the MongoDB shell) but it is more common to pass them as a vector of keywords.
-;; Monger will transform them into a document for you.
+;; Both monger.collection/find and monger.collection/find-maps take 3rd argument that specifies what fields need to be retrieved. Pass them
+;; as a vector of keywords.
 
 (def bullshit (m/find-one-as-map "evernotes" {:tags "bullshit"} ["id" "tags"]))
 
-bullshit
+(:tags bullshit)
+
+;;;;;;;;;;;;;;;;;;;;;;;:Messed-up Things;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Why does this guy have nearly 60 tags? Because it is a giant mash of many notes. I've added it to the TODOs on
+;; livre.
+
+(def mess (m/find-one-as-map "evernotes" {:id 24932}))
+(count (:tags mess))
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;:SWEARS;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;QUERY EXPERIMENT 1: FINDING SWEAR-TAGS;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
 ;; The classic "7 Dirty Words", or "the Carlin list":
 ;; - shit
 ;; - piss
@@ -64,13 +50,11 @@ bullshit
 ;; - cocksucker
 ;; - motherfucker
 ;; - tits
-
-;; We start with a modified Carlin list:
+;; We start with a modified Carlin regular expression: (shit|piss|cunt|fuck|cock|tits)
 ;;
-;;         #"(shit|piss|cunt|fuck|cock|tits)"
-
-;; "Ass" is a problem, because it is a mild swear that can be said on broadcast television after 10pm. It turns out that the
-;; only "ass" tags that are not "class" or "assault" or whatever, as demonstrated with this:
+;; "Ass" is a problem, though. It is a mild swear, but it can be said on broadcast television after 10pm and so does not
+;; fit into Carlin's "7 words you can never say on television" criterion. Upon examination, it turns out that most positive
+;; "ass" tags are just substrings of clean words such as "class", "assault", etc.
 
 (let [sets (map #(:tags %) (m/find-maps "evernotes" {:tags {$regex "ass" $options "i"}} ["tags"]))
       tags (flatten sets)]
@@ -78,30 +62,55 @@ bullshit
 
 ;; We find that the only real swears are "assholes" in a couple of variations. Therefore I include "assh" as something
 ;; to watch for, because it will pick up both "assholes" and "asshats", in case such term arises. It will not pick up
-;; "assclowns" but it's not a perfect world. I've also added "dick" because I distinctly recall referring to tagging
-;; stories about actions of certain salami commanders with the word "dicks".
+;; "assclowns" but it's not a perfect world. I've also added "dick" because, while it is a proper name, it is also a word
+;; I found myself using when describing the behavior of salami commanders.
 ;;
-;; So the final swears list shall be:
+;; NB: There is a string, and a regex, for use with monger's special operators or with Clojure.
+
 
 (def dirty-words "(shit|piss|cunt|fuck|cock|tits|assh|dick)")
+(def dirty-regex #".*(shit|piss|cunt|fuck|cock|tits|assh|dick).*")
 
-;; Note that this is a string rather than a regex, because this is getting fed to monger's specialized operators.
+(def tagged-with-swears (m/find-maps "evernotes" {:tags {$regex dirty-words $options "i"}} ["id" "tags"]))
 
-(map #(:tags %) (m/find-maps "evernotes" {:tags {$regex dirty-words $options "i"}} ["id" "tags"]))
+(defn tags [results]
+  (flatten (map #(:tags %) results )))
 
+(tags tagged-with-swears)
 
-;; NOTE: SOmething is wrong, because there is allegedly a single document with like 40 tags?
-;; Which one is that?
-
-(def en (m/find-maps "evernotes" {:tags {$regex dirty-words $options "i"}} ["id" "tags"]))
-
-(filter #(> (count (:tags %)) 10) en)
-
-(def mess (m/find-one-as-map "evernotes" {:id 24932}))
+(re-pattern dirty-words)
 
 
-(count (:tags mess))
 
 
-;; Okay, that's one messed up note. So now I'm going to see if there are a lot of things with many many tags.
-;; Except, I don't know how. So I'll wait on that. I've added a note to our "special cases" list.
+;;;;;;;;;;;;;;;;;;:QUERY 2: ALL THE TAGS;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def research-tags (m/find-maps "evernotes" {$or [{:notebook "morgue"},
+                                            {:notebook "morgue archive"}]} ["tags"]))
+
+
+(def research-vocab (distinct (tags research-tags)))
+
+(frequencies (tags research-tags))
+
+
+(spit "/home/thomas/tag-counts.txt" (reverse (sort-by val (frequencies (tags research-tags)))))
+(spit "/home/thomas/swear-counts.txt" (reverse (sort-by val freq)))
+
+freq
+
+(def freq (frequencies (filter #(re-matches dirty-regex %) (tags tagged-with-swears))))
+
+
+
+(take 50 (reverse (sort-by val (frequencies (tags research-tags)))))
+
+
+(take 100 (reverse (sort-by val (frequencies (tags research-tags)))))
+
+
+
+
+
+
+
