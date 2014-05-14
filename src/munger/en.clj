@@ -1,47 +1,67 @@
+(ns munger.core
+  (:require [monger.collection :as m])
+  (:use [monger.operators])
+  (:use [munger.core]))
 
-
-
-
-
-
-
-
-
-
-
-;;;;;;;;;;;;;;;;;;;;;the basics;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ===========================================================================================
+;; Accessing a collection to get a map
+;; ===========================================================================================
 
 ;; To get clj data structures, use these, passing in the collection name and a map of the query
 ;;   m/find-one-as-map collection query-map
 ;;   m/find-maps collection query-map
 
 (def fucked (m/find-one-as-map "evernotes" {:tags "fucked"}))
-
 (:tags fucked)
 
-;;;;;;;;;;;;;;;;;;;;;;;;Loading a subset of fields;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ============================================================================================
+;; Loading a subset of fields
+;; ===========================================================================================
 
 ;; Both monger.collection/find and monger.collection/find-maps take 3rd argument that specifies what fields need to be retrieved. Pass them
 ;; as a vector of keywords.
 
 (def bullshit (m/find-one-as-map "evernotes" {:tags "bullshit"} ["id" "tags"]))
 
+bullshit
 (:tags bullshit)
 
-;;;;;;;;;;;;;;;;;;;;;;;:Messed-up Things;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; Why does this guy have nearly 60 tags? Because it is a giant mash of many notes. I've added it to the TODOs on
-;; livre.
+;; ============================================================================================
+;; Helpers
+;; ============================================================================================
 
-(def mess (m/find-one-as-map "evernotes" {:id 24932}))
-(count (:tags mess))
+(defn tags [results]
+  (flatten (map #(:tags %) results )))
+
+;; ============================================================================================
+;; Research tags, their frequencies, selections
+;; ============================================================================================
+
+;; This gets all the maps from the morgue or morgue archive notebook.
+(def research-tags (m/find-maps "evernotes" {$or [{:notebook "morgue"},
+                                            {:notebook "morgue archive"}]} ["tags"]))
+
+;; Frequency information on research tags
+(frequencies (tags research-tags))
+;; Unique research tags
+(def research-vocab (distinct (tags research-tags)))
+
+;; ## Top 50, top 100
+(take 50 (reverse (sort-by val (frequencies (tags research-tags)))))
+(take 100 (reverse (sort-by val (frequencies (tags research-tags)))))
 
 
 
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;QUERY EXPERIMENT 1: FINDING SWEAR-TAGS;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;
+
+
+
+;; ============================================================================================
+;; Query: Find all notes tagged with swears
+;; ============================================================================================
+
 ;; The classic "7 Dirty Words", or "the Carlin list":
 ;; - shit
 ;; - piss
@@ -67,49 +87,26 @@
 ;;
 ;; NB: There is a string, and a regex, for use with monger's special operators or with Clojure.
 
-
 (def dirty-words "(shit|piss|cunt|fuck|cock|tits|assh|dick)")
 (def dirty-regex #".*(shit|piss|cunt|fuck|cock|tits|assh|dick).*")
 
+;; Alright, go get those swears
 (def tagged-with-swears (m/find-maps "evernotes" {:tags {$regex dirty-words $options "i"}} ["id" "tags"]))
 
-(defn tags [results]
-  (flatten (map #(:tags %) results )))
-
-(tags tagged-with-swears)
-
-(re-pattern dirty-words)
-
-
-
-
-;;;;;;;;;;;;;;;;;;:QUERY 2: ALL THE TAGS;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(def research-tags (m/find-maps "evernotes" {$or [{:notebook "morgue"},
-                                            {:notebook "morgue archive"}]} ["tags"]))
-
-
-(def research-vocab (distinct (tags research-tags)))
-
-(frequencies (tags research-tags))
-
-
-(spit "/home/thomas/tag-counts.txt" (reverse (sort-by val (frequencies (tags research-tags)))))
-(spit "/home/thomas/swear-counts.txt" (reverse (sort-by val freq)))
-
-freq
+;; (re-pattern dirty-words)
 
 (def freq (frequencies (filter #(re-matches dirty-regex %) (tags tagged-with-swears))))
 
 
 
-(take 50 (reverse (sort-by val (frequencies (tags research-tags)))))
+;; ===============================================================================
+;; Issues with the data
+;; ===============================================================================
 
+;; Why does this guy have nearly 60 tags? Because it is a giant mash of many notes. See also the little todo data items on livre.
 
-(take 100 (reverse (sort-by val (frequencies (tags research-tags)))))
-
-
-
+(def mess (m/find-one-as-map "evernotes" {:id 24932}))
+(count (:tags mess))
 
 
 
