@@ -1,4 +1,4 @@
-(ns munger.core
+(ns munger.connect
   (:require [monger.collection :as m] [monger.core :as mc])
   (:use [monger.operators])
   (:import [org.bson.types ObjectId] [com.mongodb DB WriteConcern MongoOptions ServerAddress]))
