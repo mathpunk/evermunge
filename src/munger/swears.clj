@@ -1,10 +1,10 @@
 (ns munger.swears
-  )
+  (:require [monger.collection :as m] [monger.core :as mc]))
 ;; ============================================================================================
 ;; Query: Find all notes tagged with swears
 ;; ============================================================================================
 
-;; The classic "7 Dirty Words", or "the Carlin list":
+;; The classic "7 Dirty Words", or "the Carlin standard":
 ;; - shit
 ;; - piss
 ;; - cunt
